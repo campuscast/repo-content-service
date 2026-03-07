@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { MetricsModule } from '@campuscast/shared-libs';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ContentModule } from './content/content.module';
@@ -20,6 +21,7 @@ import { appConfig, dbConfig, s3Config, validate } from './config';
       synchronize: process.env.NODE_ENV === 'development',
     }),
     ContentModule,
+      MetricsModule,
   ],
   controllers: [HealthController],
 })

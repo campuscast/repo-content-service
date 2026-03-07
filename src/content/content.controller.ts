@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Param, Body, Query } from '@nestjs/common';
+import { Controller, Post, Get, Delete, Patch, Param, Body, Query } from '@nestjs/common';
 import { ContentService } from './content.service';
 
 @Controller('content')
@@ -13,6 +13,16 @@ export class ContentController {
   @Post(':assetId/complete')
   async complete(@Param('assetId') id: string, @Body() body: { sha256_hash: string }) {
     return this.svc.completeUpload(id, body.sha256_hash);
+  }
+
+  @Patch(':assetId')
+  async rename(@Param('assetId') id: string, @Body() body: { filename: string }) {
+    return this.svc.renameAsset(id, body.filename);
+  }
+
+  @Delete(':assetId')
+  async delete(@Param('assetId') id: string) {
+    return this.svc.deleteAsset(id);
   }
 
   @Get()
