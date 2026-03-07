@@ -4,24 +4,51 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 @Injectable()
 export class StorageService {
+  /** Client for server-side operations (internal Docker network). */
   private s3: S3Client;
+
+  /**
+   * Client used exclusively for generating presigned URLs.
+   * When S3_PUBLIC_ENDPOINT is set it points to a browser-reachable address
+   * (e.g. http://localhost:9000) so the signed URL works from the browser.
+   * Falls back to the main client when the variable is not set.
+   */
+  private s3Signing: S3Client;
+
   private bucket: string;
 
   constructor() {
     this.bucket = process.env.S3_BUCKET || 'campuscast-content';
+
+    const region = process.env.S3_REGION || 'us-east-1';
+    const credentials = {
+      accessKeyId: process.env.S3_ACCESS_KEY || 'minioadmin',
+      secretAccessKey: process.env.S3_SECRET_KEY || 'minioadmin',
+    };
+
+    const internalEndpoint = process.env.S3_ENDPOINT || 'http://localhost:9000';
+
     this.s3 = new S3Client({
-      endpoint: process.env.S3_ENDPOINT || 'http://localhost:9000',
-      region: process.env.S3_REGION || 'us-east-1',
-      credentials: {
-        accessKeyId: process.env.S3_ACCESS_KEY || 'minioadmin',
-        secretAccessKey: process.env.S3_SECRET_KEY || 'minioadmin',
-      },
+      endpoint: internalEndpoint,
+      region,
+      credentials,
       forcePathStyle: true,
     });
+
+    const publicEndpoint = process.env.S3_PUBLIC_ENDPOINT;
+
+    this.s3Signing = publicEndpoint
+      ? new S3Client({
+          endpoint: publicEndpoint,
+          region,
+          credentials,
+          forcePathStyle: true,
+        })
+      : this.s3;
   }
 
   async getPresignedUploadUrl(key: string, contentType: string): Promise<string> {
     const command = new PutObjectCommand({ Bucket: this.bucket, Key: key, ContentType: contentType });
-    return getSignedUrl(this.s3, command, { expiresIn: 3600 });
+    return getSignedUrl(this.s3Signing, command, { expiresIn: 3600 });
   }
 }
