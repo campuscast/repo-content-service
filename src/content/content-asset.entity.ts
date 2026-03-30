@@ -9,6 +9,9 @@ export class ContentAsset {
   @Column()
   zone_id: string;
 
+  @Column('text', { array: true, default: '{}' })
+  zone_ids: string[];
+
   @Column()
   filename: string;
 

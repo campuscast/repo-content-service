@@ -20,9 +20,24 @@ export class ContentController {
     return this.svc.getById(id);
   }
 
+  @Get('asset/:assetId/info')
+  async getInfo(@Param('assetId') id: string) {
+    return this.svc.getAssetInfo(id);
+  }
+
   @Patch(':assetId')
   async rename(@Param('assetId') id: string, @Body() body: { filename: string }) {
     return this.svc.renameAsset(id, body.filename);
+  }
+
+  @Patch(':assetId/availability')
+  async updateAvailability(@Param('assetId') id: string, @Body() body: { zone_ids: string[] }) {
+    return this.svc.updateAssetAvailability(id, body.zone_ids || []);
+  }
+
+  @Post(':assetId/availability/prune-unused')
+  async pruneUnusedAvailability(@Param('assetId') id: string) {
+    return this.svc.pruneUnusedAvailability(id);
   }
 
   @Delete(':assetId')
@@ -31,8 +46,18 @@ export class ContentController {
   }
 
   @Get()
-  async list(@Query('zone_id') zoneId: string, @Query('page') page = 1, @Query('page_size') pageSize = 20) {
-    const [data, total] = await this.svc.listByZone(zoneId, +page, +pageSize);
+  async list(
+    @Query('zone_id') zoneId?: string,
+    @Query('zone_ids') zoneIdsQuery?: string,
+    @Query('page') page = 1,
+    @Query('page_size') pageSize = 20,
+  ) {
+    const zoneIds = zoneIdsQuery
+      ? zoneIdsQuery.split(',').map((entry) => entry.trim()).filter(Boolean)
+      : zoneId
+        ? [zoneId]
+        : [];
+    const [data, total] = await this.svc.listByZones(zoneIds, +page, +pageSize);
     return { data, pagination: { total, page: +page, page_size: +pageSize } };
   }
 
@@ -73,6 +98,14 @@ export class ContentController {
   @Get('publications/:publicationId')
   async getPublication(@Param('publicationId') publicationId: string) {
     return this.svc.getPublication(publicationId);
+  }
+
+  @Post('publications/:publicationId/copy')
+  async copyPublication(
+    @Param('publicationId') publicationId: string,
+    @Body() body: { zone_id: string; title: string },
+  ) {
+    return this.svc.copyPublication(publicationId, body);
   }
 
   @Patch('publications/:publicationId')

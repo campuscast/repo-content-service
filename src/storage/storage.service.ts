@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 @Injectable()
@@ -56,5 +56,11 @@ export class StorageService {
     const command = new GetObjectCommand({ Bucket: this.bucket, Key: key });
     const expiresIn = parseInt(process.env.S3_DOWNLOAD_URL_TTL_SECONDS || '604800', 10); // 7 days
     return getSignedUrl(this.s3Signing, command, { expiresIn });
+  }
+
+  async deleteObject(key: string): Promise<void> {
+    if (!key) return;
+    const command = new DeleteObjectCommand({ Bucket: this.bucket, Key: key });
+    await this.s3.send(command);
   }
 }
