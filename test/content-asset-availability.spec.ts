@@ -8,6 +8,7 @@ describe('ContentService asset availability', () => {
   };
 
   let assetRepo: {
+    createQueryBuilder: jest.Mock;
     find: jest.Mock;
     findOne: jest.Mock;
     remove: jest.Mock;
@@ -24,6 +25,7 @@ describe('ContentService asset availability', () => {
   beforeEach(() => {
     jest.resetAllMocks();
     assetRepo = {
+      createQueryBuilder: jest.fn(),
       find: jest.fn(),
       findOne: jest.fn(),
       remove: jest.fn(async (value) => value),
@@ -45,6 +47,86 @@ describe('ContentService asset availability', () => {
     (service as any).auditClient = {
       append: jest.fn().mockResolvedValue(undefined),
     };
+  });
+
+  it('returns publication usage counts for listed assets, including draft publications', async () => {
+    const listedAssets = [
+      {
+        asset_id: 'asset-1',
+        zone_id: 'zone-1',
+        zone_ids: ['zone-1'],
+        filename: 'first.jpg',
+        content_type: 'image/jpeg',
+        file_size: 123,
+        sha256_hash: 'hash-1',
+        storage_key: 'zone-1/first.jpg',
+        status: 'ready',
+        signature: 'sig-1',
+        key_id: 'key-1',
+        metadata: {},
+        created_at: new Date('2026-01-01T00:00:00Z'),
+        updated_at: new Date('2026-01-01T00:00:00Z'),
+      },
+      {
+        asset_id: 'asset-2',
+        zone_id: 'zone-1',
+        zone_ids: ['zone-1'],
+        filename: 'second.jpg',
+        content_type: 'image/jpeg',
+        file_size: 456,
+        sha256_hash: 'hash-2',
+        storage_key: 'zone-1/second.jpg',
+        status: 'ready',
+        signature: 'sig-2',
+        key_id: 'key-2',
+        metadata: {},
+        created_at: new Date('2026-01-01T00:00:00Z'),
+        updated_at: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+
+    const pagedQuery = {
+      orderBy: jest.fn().mockReturnThis(),
+      skip: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue(listedAssets),
+    };
+    const baseQuery = {
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getCount: jest.fn().mockResolvedValue(2),
+      clone: jest.fn().mockReturnValue(pagedQuery),
+    };
+    assetRepo.createQueryBuilder.mockReturnValue(baseQuery);
+
+    publicationRepo.find.mockResolvedValue([
+      {
+        publication_id: 'pub-draft',
+        zone_id: 'zone-1',
+        status: 'draft',
+        items: [
+          { type: 'custom_slide', slide: { image_asset_id: 'asset-1', logo_asset_id: 'asset-2' } },
+        ],
+      },
+      {
+        publication_id: 'pub-active',
+        zone_id: 'zone-1',
+        status: 'active',
+        items: [
+          { type: 'video_asset', video: { asset_id: 'asset-1' } },
+          { type: 'custom_slide', slide: { image_asset_id: 'asset-1' } },
+        ],
+      },
+    ]);
+
+    const result = await service.listByZones(['zone-1'], 1, 20);
+
+    expect(result.total).toBe(2);
+    expect(result.data).toHaveLength(2);
+    expect(result.publicationUsageByAsset).toEqual({
+      'asset-1': 2,
+      'asset-2': 1,
+    });
   });
 
   it('shares referenced assets with the target zone when a publication is copied', async () => {

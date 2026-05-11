@@ -57,8 +57,12 @@ export class ContentController {
       : zoneId
         ? [zoneId]
         : [];
-    const [data, total] = await this.svc.listByZones(zoneIds, +page, +pageSize);
-    return { data, pagination: { total, page: +page, page_size: +pageSize } };
+    const result = await this.svc.listByZones(zoneIds, +page, +pageSize);
+    return {
+      data: result.data,
+      pagination: { total: result.total, page: +page, page_size: +pageSize },
+      publication_usage_by_asset: result.publicationUsageByAsset,
+    };
   }
 
   @Post('resolve-assets')
@@ -125,5 +129,15 @@ export class ContentController {
   @Delete('publications/:publicationId')
   async deletePublication(@Param('publicationId') publicationId: string) {
     return this.svc.deletePublication(publicationId);
+  }
+
+  @Post('publications/:publicationId/restore')
+  async restorePublication(@Param('publicationId') publicationId: string) {
+    return this.svc.restorePublication(publicationId);
+  }
+
+  @Delete('publications/:publicationId/permanent')
+  async deletePublicationPermanently(@Param('publicationId') publicationId: string) {
+    return this.svc.deletePublicationPermanently(publicationId);
   }
 }

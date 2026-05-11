@@ -231,7 +231,11 @@ export class ContentService {
   async listByZones(zoneIds: string[], page: number, pageSize: number) {
     const normalizedZoneIds = this.normalizeZoneIds(zoneIds);
     if (normalizedZoneIds.length === 0) {
-      return [[], 0] as const;
+      return {
+        data: [],
+        total: 0,
+        publicationUsageByAsset: {},
+      } as const;
     }
 
     const baseQuery = this.repo
@@ -247,7 +251,16 @@ export class ContentService {
       .take(pageSize)
       .getMany();
 
-    return [data.map((asset) => this.toAssetDto(asset)), total] as const;
+    const assetIds = data.map((asset) => asset.asset_id);
+    const publicationUsageCounts = await this.getPublicationUsageCountsForAssets(assetIds, normalizedZoneIds);
+
+    return {
+      data: data.map((asset) => this.toAssetDto(asset)),
+      total,
+      publicationUsageByAsset: Object.fromEntries(
+        assetIds.map((assetId) => [assetId, publicationUsageCounts.get(assetId) || 0]),
+      ),
+    } as const;
   }
 
   async createPublication(data: {
@@ -442,6 +455,62 @@ export class ContentService {
     return this.toPublicationDto(publication);
   }
 
+  async restorePublication(publicationId: string) {
+    const publication = await this.publicationRepo.findOne({
+      where: { publication_id: publicationId },
+    });
+    if (!publication) throw new NotFoundException('Publication not found');
+    if (publication.status !== 'archived') {
+      return this.toPublicationDto(publication);
+    }
+
+    publication.status = 'draft';
+    publication.version = (publication.version || 1) + 1;
+    await this.publicationRepo.save(publication);
+
+    await this.auditClient.append({
+      event_type: 'publication.restored',
+      actor_type: 'system',
+      actor_id: 'content-service',
+      zone_id: publication.zone_id,
+      resource_type: 'publication',
+      resource_id: publication.publication_id,
+      action: 'restore',
+      detail: { status: publication.status },
+    });
+
+    return this.toPublicationDto(publication);
+  }
+
+  async deletePublicationPermanently(publicationId: string) {
+    const publication = await this.publicationRepo.findOne({
+      where: { publication_id: publicationId },
+    });
+    if (!publication) throw new NotFoundException('Publication not found');
+
+    await this.publicationRepo.remove(publication);
+
+    await this.auditClient.append({
+      event_type: 'publication.deleted',
+      actor_type: 'system',
+      actor_id: 'content-service',
+      zone_id: publication.zone_id,
+      resource_type: 'publication',
+      resource_id: publication.publication_id,
+      action: 'delete',
+      detail: {
+        title: publication.title,
+        previous_status: publication.status,
+      },
+    });
+
+    return {
+      deleted: true,
+      publication_id: publication.publication_id,
+      zone_id: publication.zone_id,
+    };
+  }
+
   async resolveAssets(zoneId: string, assetIds: string[]) {
     const safeZoneId = this.requireZoneId(zoneId);
     const uniqueAssetIds = Array.from(new Set(assetIds.filter(Boolean)));
@@ -607,6 +676,38 @@ export class ContentService {
         continue;
       }
       counts.set(publication.zone_id, (counts.get(publication.zone_id) || 0) + 1);
+    }
+
+    return counts;
+  }
+
+  private async getPublicationUsageCountsForAssets(assetIds: string[], zoneIds: string[]) {
+    const normalizedZoneIds = this.normalizeZoneIds(zoneIds);
+    const uniqueAssetIds = Array.from(new Set(assetIds.filter(Boolean)));
+    const counts = new Map<string, number>();
+
+    if (normalizedZoneIds.length === 0 || uniqueAssetIds.length === 0) {
+      return counts;
+    }
+
+    const trackedAssetIds = new Set(uniqueAssetIds);
+    const publications = await this.publicationRepo.find({
+      where: {
+        zone_id: In(normalizedZoneIds),
+        status: Not('archived'),
+      },
+    });
+
+    for (const publication of publications) {
+      const refs = new Set<string>();
+      this.collectAssetRefs(publication.items || [], refs);
+
+      for (const assetId of refs) {
+        if (!trackedAssetIds.has(assetId)) {
+          continue;
+        }
+        counts.set(assetId, (counts.get(assetId) || 0) + 1);
+      }
     }
 
     return counts;
